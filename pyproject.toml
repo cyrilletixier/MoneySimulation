@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfolio-simulator"
+version = "0.1.0"
+description = "Simulateur d'évolution d'un portefeuille multi-classes d'actifs à partir de données de marché réelles."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+portfolio-sim = "portfolio_sim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
