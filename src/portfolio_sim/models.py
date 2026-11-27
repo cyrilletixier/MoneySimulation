@@ -9,7 +9,7 @@ from typing import Mapping
 
 @dataclass(frozen=True)
 class AssetSpec:
-    """Where to find the price history of one asset class."""
+    """Where to find the price history of one asset class (or inflation index)."""
 
     key: str  # internal id, e.g. "us_equity"
     label: str  # human readable name
@@ -29,6 +29,16 @@ DEFAULT_ASSETS: dict[str, AssetSpec] = {
         AssetSpec("gov_debt", "Dette d'Etat", "yahoo", "IEF"),  # US Treasuries 7-10y ETF (2002+)
         AssetSpec("bonds", "Obligations", "yahoo", "LQD"),  # US investment-grade corporate bonds ETF (2002+)
         AssetSpec("real_estate", "Immobilier", "yahoo", "VNQ"),  # US listed real estate (REITs) ETF (2004+)
+        AssetSpec("bitcoin", "Bitcoin", "yahoo", "BTC-USD"),  # Bitcoin in USD (Sept 2014+)
+    ]
+}
+
+# Consumer price indices (monthly, FRED). Used to compare the portfolio with inflation.
+INFLATION_SERIES: dict[str, AssetSpec] = {
+    a.key: a
+    for a in [
+        AssetSpec("eu", "Zone euro (IPCH)", "fred", "CP0000EZ19M086NEST"),  # Eurostat HICP, 1996+
+        AssetSpec("us", "États-Unis (CPI)", "fred", "CPIAUCSL"),  # US CPI-U, 1947+
     ]
 }
 
@@ -81,14 +91,19 @@ class SimulationConfig:
     start_date: date
     allocation: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_ALLOCATION))
     end_date: date | None = None  # defaults to today
-    step_months: int = 12
+    step_months: int = 12  # reporting step (and rebalancing step)
     rebalance: bool = True  # bring weights back to target at each step
+    monthly_contribution: float = 0.0  # added every month, split according to the target allocation
+    inflation: str | None = None  # key of INFLATION_SERIES ("eu", "us") to compare with, or None
     assets: dict[str, AssetSpec] = field(default_factory=lambda: dict(DEFAULT_ASSETS))
+    inflation_series: dict[str, AssetSpec] = field(default_factory=lambda: dict(INFLATION_SERIES))
 
     def __post_init__(self) -> None:
         self.allocation = normalize_allocation(self.allocation)
         if self.initial_amount <= 0:
             raise ValueError("Initial amount must be positive.")
+        if self.monthly_contribution < 0:
+            raise ValueError("Monthly contribution cannot be negative.")
         if isinstance(self.step_months, str):
             self.step_months = parse_step(self.step_months)
         unknown = set(self.allocation) - set(self.assets)
@@ -96,6 +111,11 @@ class SimulationConfig:
             raise ValueError(
                 f"No data source defined for: {', '.join(sorted(unknown))}. "
                 f"Known assets: {', '.join(sorted(self.assets))}."
+            )
+        if self.inflation is not None and self.inflation not in self.inflation_series:
+            raise ValueError(
+                f"Unknown inflation series {self.inflation!r} "
+                f"(available: {', '.join(sorted(self.inflation_series))})."
             )
         if self.end_date is not None and self.end_date <= self.start_date:
             raise ValueError("End date must be after start date.")

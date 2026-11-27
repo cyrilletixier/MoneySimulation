@@ -22,9 +22,15 @@
     <form id="form" class="panel controls" autocomplete="off" novalidate>
       <h2>Paramètres</h2>
 
-      <div class="field">
-        <label for="amount">Somme de départ</label>
-        <input id="amount" type="number" inputmode="decimal" min="1" step="100" value="100000">
+      <div class="row2">
+        <div class="field">
+          <label for="amount">Somme de départ</label>
+          <input id="amount" type="number" inputmode="decimal" min="1" step="100" value="100000">
+        </div>
+        <div class="field">
+          <label for="monthly">Versement mensuel</label>
+          <input id="monthly" type="number" inputmode="decimal" min="0" step="50" value="0">
+        </div>
       </div>
 
       <div class="row2">
@@ -38,6 +44,13 @@
         </div>
       </div>
       <p id="range-hint" class="hint"></p>
+
+      <div class="field" id="inflation-field">
+        <label for="inflation">Comparer à l'inflation</label>
+        <select id="inflation">
+          <option value="">Aucune</option>
+        </select>
+      </div>
 
       <div class="row2">
         <div class="field">
@@ -93,7 +106,7 @@
 
   <footer class="wrap foot">
     <p id="data-note"></p>
-    <p>Limites&nbsp;: chaque classe d'actifs est représentée par un fonds ou un indice coté (proxy) ; les montants ne sont pas convertis entre devises (la plupart des proxies sont en USD, l'Europe en EUR) ; ni frais, ni fiscalité, ni inflation. Le passé ne préjuge pas de l'avenir&nbsp;: simulation à but informatif, pas un conseil en investissement.</p>
+    <p>Limites&nbsp;: chaque classe d'actifs est représentée par un fonds ou un indice coté (proxy) ; les montants ne sont pas convertis entre devises (la plupart des proxies sont en USD, l'Europe en EUR) ; ni frais ni fiscalité. Les versements mensuels sont investis le même jour de chaque mois, selon l'allocation cible. L'inflation vient de l'indice des prix à la consommation choisi (publié avec 1 à 2 mois de retard) ; le « capital indexé » est ce que vaudrait l'argent versé s'il suivait simplement l'inflation. Le Bitcoin est très volatil et n'existe dans les données que depuis septembre 2014. Le passé ne préjuge pas de l'avenir&nbsp;: simulation à but informatif, pas un conseil en investissement.</p>
   </footer>
 
   <script src="engine.js"></script>

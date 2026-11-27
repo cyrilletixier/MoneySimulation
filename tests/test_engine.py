@@ -129,3 +129,92 @@ def test_default_strategy_end_to_end_with_synthetic_data():
     # deterministic
     res2 = simulate(cfg, SyntheticProvider())
     pd.testing.assert_frame_equal(res.table, res2.table)
+
+
+# ---------- monthly contributions ----------
+FLAT = {"A": {"2019-12-31": 100, "2022-01-01": 100}}
+
+
+def flat_config(**kw):
+    cfg = make_config({"a": 1.0}, **kw)
+    cfg.assets = {"a": AssetSpec("a", "a", "fake", "A")}
+    return cfg
+
+
+def test_monthly_contribution_reports_on_steps_but_invests_monthly():
+    res = simulate(flat_config(monthly_contribution=100), FakeProvider(FLAT))
+    t = res.table
+    assert len(t) == 3  # yearly report dates
+    assert list(t["invested"]) == pytest.approx([1000, 2200, 3400])  # 12 then 24 monthly payments
+    assert list(t["total"]) == pytest.approx([1000, 2200, 3400])  # flat prices: no gain
+    assert res.metrics()["cagr"] == pytest.approx(0.0, abs=1e-9)
+    assert res.metrics()["gain"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_contributions_do_not_count_as_performance():
+    # A doubles in 2020 then stays flat: contributions made after the jump must not inflate returns
+    data = {"A": {"2019-12-31": 100, "2020-01-31": 100, "2020-02-01": 200, "2022-01-01": 200}}
+    res = simulate(flat_config(monthly_contribution=1000), FakeProvider(data))
+    t = res.table
+    assert t["twr_index"].iloc[-1] == pytest.approx(2.0)  # price doubled once, whatever was added
+    assert t["return"].iloc[2] == pytest.approx(0.0, abs=1e-9)
+    m = res.metrics()
+    assert m["max_drawdown"] == pytest.approx(0.0, abs=1e-9)
+    # money-weighted return is below the price-only return because most money came after the jump
+    assert m["cagr"] < 2.0 ** (1 / 2) - 1
+
+
+def test_contribution_amount_validated():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        flat_config(monthly_contribution=-5)
+
+
+# ---------- inflation ----------
+CPI_SPEC = {"x": AssetSpec("x", "CPI", "fake", "CPI")}
+
+
+def monthly_cpi_doubling_in_two_years():
+    idx = pd.date_range("2019-12-01", "2022-01-01", freq="MS")
+    return {str(d.date()): 100 * 2 ** (((d.year - 2019) * 12 + d.month - 12) / 24) for d in idx}
+
+
+def test_inflation_comparison():
+    cfg = flat_config(inflation="x", inflation_series=CPI_SPEC)
+    res = simulate(cfg, FakeProvider({**FLAT, "CPI": monthly_cpi_doubling_in_two_years()}))
+    m = res.metrics()
+    assert m["final_value"] == pytest.approx(1000)  # flat asset
+    assert m["real_final_value"] == pytest.approx(500)  # prices doubled: half the purchasing power
+    assert m["indexed_capital"] == pytest.approx(2000)
+    assert m["vs_indexed"] == pytest.approx(-0.5)
+    assert m["inflation_cagr"] == pytest.approx(2 ** 0.5 - 1, rel=1e-3)
+    assert m["real_cagr"] == pytest.approx(0.5 ** 0.5 - 1, rel=1e-3)
+
+
+def test_inflation_with_contributions_indexes_each_payment():
+    cfg = flat_config(inflation="x", monthly_contribution=100, inflation_series=CPI_SPEC)
+    res = simulate(cfg, FakeProvider({**FLAT, "CPI": monthly_cpi_doubling_in_two_years()}))
+    t = res.table
+    assert t["indexed_capital"].iloc[0] == pytest.approx(1000)
+    # every euro paid in keeps pace with prices, so indexed capital always exceeds the amount paid in
+    assert (t["indexed_capital"].iloc[1:] > t["invested"].iloc[1:]).all()
+    assert t["real_total"].iloc[-1] < t["total"].iloc[-1]
+
+
+def test_unknown_inflation_series():
+    with pytest.raises(ValueError, match="Unknown inflation"):
+        flat_config(inflation="mars")
+
+
+def test_inflation_data_too_short():
+    cfg = flat_config(inflation="x", inflation_series=CPI_SPEC)
+    short = {k: v for k, v in monthly_cpi_doubling_in_two_years().items() if k < "2021-01-01"}
+    with pytest.raises(DataError, match="data ends"):
+        simulate(cfg, FakeProvider({**FLAT, "CPI": short}))
+
+
+def test_bitcoin_is_a_default_asset_and_works_with_synthetic_data():
+    cfg = SimulationConfig(initial_amount=10_000, start_date=date(2016, 1, 4), end_date=date(2020, 1, 4),
+                           allocation={"us_equity": 0.9, "bitcoin": 0.1}, monthly_contribution=200, inflation="eu")
+    res = simulate(cfg, SyntheticProvider())
+    assert {"us_equity", "bitcoin", "real_total", "indexed_capital"} <= set(res.table.columns)
+    assert res.table["bitcoin"].iloc[0] == pytest.approx(1000)

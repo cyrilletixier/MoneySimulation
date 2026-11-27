@@ -64,3 +64,56 @@ test("earliestStart / latestEnd", () => {
   assert.equal(E.toISO(E.earliestStart(series, ["a", "b"])), "2019-12-31");
   assert.equal(E.toISO(E.latestEnd(series, ["a", "b"])), "2022-01-01");
 });
+
+// ---------- versements mensuels ----------
+const flat = E.prepareSeries({
+  a: { label: "A", symbol: "A", dates: ["2019-12-31", "2022-01-01"], prices: [100, 100] },
+});
+const flatCfg = { amount: 1000, start: iso("2020-01-01"), end: iso("2022-01-01"), stepMonths: 12, rebalance: true, allocation: { a: 1 } };
+
+test("versement mensuel : restitution au pas, investissement chaque mois", () => {
+  const r = E.simulate({ ...flatCfg, monthlyContribution: 100 }, flat);
+  assert.equal(r.dates.length, 3);
+  [1000, 2200, 3400].forEach((v, i) => approx(r.invested[i], v));
+  [1000, 2200, 3400].forEach((v, i) => approx(r.total[i], v));
+  approx(E.metrics(r, 12).cagr, 0, 1e-9);
+});
+
+test("les versements ne comptent pas comme de la performance", () => {
+  const s = E.prepareSeries({
+    a: { label: "A", symbol: "A", dates: ["2019-12-31", "2020-01-31", "2020-02-01", "2022-01-01"], prices: [100, 100, 200, 200] },
+  });
+  const r = E.simulate({ ...flatCfg, monthlyContribution: 1000 }, s);
+  approx(r.twr[r.twr.length - 1], 2);
+  const m = E.metrics(r, 12);
+  approx(m.maxDrawdown, 0, 1e-9);
+  assert.ok(m.cagr < Math.sqrt(2) - 1);
+});
+
+// ---------- inflation ----------
+const cpiEntries = { dates: [], prices: [], label: "CPI", symbol: "CPI" };
+for (let m = 0; m <= 25; m++) {
+  cpiEntries.dates.push(E.toISO(E.addMonths(iso("2019-12-01"), m)));
+  cpiEntries.prices.push(100 * 2 ** ((m + 0) / 24)); // double en 2 ans
+}
+const cpi = E.prepareSeries({ x: cpiEntries }).x;
+
+test("comparaison à l'inflation", () => {
+  const r = E.simulate({ ...flatCfg, cpi }, flat);
+  const m = E.metrics(r, 12);
+  approx(m.final, 1000);
+  approx(m.realFinal, 500, 1e-6);
+  approx(m.indexedCapital, 2000, 1e-6);
+  approx(m.vsIndexed, -0.5, 1e-9);
+  assert.ok(Math.abs(m.inflationCagr - (Math.SQRT2 - 1)) < 1e-3);
+  assert.ok(Math.abs(m.realCagr - (Math.SQRT1_2 - 1)) < 1e-3);
+});
+
+test("inflation : données trop courtes", () => {
+  const short = { ...cpi, dates: cpi.dates.slice(0, 12), prices: cpi.prices.slice(0, 12) };
+  assert.throws(() => E.simulate({ ...flatCfg, cpi: short }, flat), /s'arrêtent/);
+});
+
+test("cpiLastUsable : un mois de tolérance après la dernière valeur", () => {
+  assert.equal(E.toISO(E.cpiLastUsable(cpi)), "2022-02-01");
+});

@@ -23,6 +23,28 @@ def test_export_synthetic_structure_and_no_future_dates(tmp_path):
         assert all(p > 0 for p in a["prices"])
 
 
+def test_export_contains_bitcoin_and_monthly_inflation(tmp_path):
+    out = tmp_path / "prices.json"
+    payload = export_prices(out, provider_name="synthetic", end=date(2024, 6, 30))
+    assert "bitcoin" in payload["assets"]
+    assert set(payload["inflation"]) == {"eu", "us"}
+    for infl in payload["inflation"].values():
+        assert all(d.endswith("-01") for d in infl["dates"])  # one value per month, on the 1st
+        assert infl["end"] <= "2024-06-30"
+    assert payload["warnings"] == []
+
+
+def test_failed_inflation_series_is_skipped_with_a_warning(tmp_path):
+    out = tmp_path / "prices.json"
+    assets = {"x": AssetSpec("x", "Actif", "synthetic", "SPY")}
+    infl = {"i": AssetSpec("i", "Inflation absente", "csv", "NOPE")}
+    payload = export_prices(out, assets=assets, inflation=infl, csv_dir=str(tmp_path), retries=1,
+                            end=date(2024, 6, 30))
+    assert payload["inflation"] == {}
+    assert "Inflation series skipped" in payload["warnings"][0]
+    assert out.exists()
+
+
 def test_export_aborts_and_writes_nothing_when_an_asset_fails(tmp_path):
     out = tmp_path / "prices.json"
     assets = {"x": AssetSpec("x", "Inconnu", "csv", "NOPE")}

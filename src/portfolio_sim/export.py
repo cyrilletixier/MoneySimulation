@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .models import DEFAULT_ASSETS, AssetSpec
+from .models import DEFAULT_ASSETS, INFLATION_SERIES, AssetSpec
 from .providers import DataError, PriceProvider, build_provider
 
 DEFAULT_START = "1990-01-01"
@@ -33,6 +33,18 @@ def _fetch_with_retry(provider: PriceProvider, spec: AssetSpec, start: pd.Timest
     raise DataError(f"{spec.label} ({spec.symbol}, {spec.provider}): {last}")
 
 
+def _entry(spec: AssetSpec, provider_name: str, series: pd.Series) -> dict:
+    return {
+        "label": spec.label,
+        "symbol": spec.symbol,
+        "provider": provider_name,
+        "start": series.index[0].strftime("%Y-%m-%d"),
+        "end": series.index[-1].strftime("%Y-%m-%d"),
+        "dates": list(series.index.strftime("%Y-%m-%d")),
+        "prices": [round(float(p), 4) for p in series.to_numpy()],
+    }
+
+
 def export_prices(
     out: str | Path,
     *,
@@ -40,28 +52,34 @@ def export_prices(
     start: str = DEFAULT_START,
     end: date | None = None,
     assets: dict[str, AssetSpec] | None = None,
+    inflation: dict[str, AssetSpec] | None = None,
     cache_dir: str | None = None,
     csv_dir: str = "data",
     retries: int = 3,
     pause: float = 2.0,
 ) -> dict:
-    """Download every asset's history and write it to `out`. Returns the payload.
+    """Download every series and write it to `out`. Returns the payload.
 
-    Raises DataError (and writes nothing) if any asset cannot be fetched, so a
+    Raises DataError (and writes nothing) if any *asset* cannot be fetched, so a
     scheduled refresh never publishes a partial or silently degraded file.
+    Inflation series are optional: one that fails is left out and reported in
+    payload["warnings"], and the site simply hides that comparison.
     """
-    assets = assets or DEFAULT_ASSETS
+    assets = DEFAULT_ASSETS if assets is None else assets
+    inflation = INFLATION_SERIES if inflation is None else inflation
     end = end or date.today()
     start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
     providers: dict[str, PriceProvider] = {}
+
+    def source(name: str) -> PriceProvider:
+        return providers.setdefault(name, build_provider(name, cache_dir=cache_dir, csv_dir=csv_dir))
+
     payload_assets: dict[str, dict] = {}
     errors: list[str] = []
-
     for key, spec in assets.items():
         name = provider_name or spec.provider
-        src = providers.setdefault(name, build_provider(name, cache_dir=cache_dir, csv_dir=csv_dir))
         try:
-            series = _fetch_with_retry(src, spec, start_ts, end_ts, retries, pause)
+            series = _fetch_with_retry(source(name), spec, start_ts, end_ts, retries, pause)
         except DataError as exc:
             errors.append(str(exc))
             continue
@@ -69,23 +87,33 @@ def export_prices(
         if series.empty:
             errors.append(f"{spec.label} ({spec.symbol}): no data before {end}.")
             continue
-        payload_assets[key] = {
-            "label": spec.label,
-            "symbol": spec.symbol,
-            "provider": name,
-            "start": series.index[0].strftime("%Y-%m-%d"),
-            "end": series.index[-1].strftime("%Y-%m-%d"),
-            "dates": list(series.index.strftime("%Y-%m-%d")),
-            "prices": [round(float(p), 4) for p in series.to_numpy()],
-        }
+        payload_assets[key] = _entry(spec, name, series)
 
     if errors:
         raise DataError("Export aborted, data unavailable for:\n  - " + "\n  - ".join(errors))
+
+    payload_inflation: dict[str, dict] = {}
+    warnings: list[str] = []
+    for key, spec in inflation.items():
+        name = provider_name or spec.provider
+        try:
+            series = _fetch_with_retry(source(name), spec, start_ts, end_ts, retries, pause)
+        except DataError as exc:
+            warnings.append(f"Inflation series skipped: {exc}")
+            continue
+        series = series[series.index <= end_ts]
+        series = series.resample("MS").first().dropna()  # one value per month, dated on the 1st
+        if series.empty:
+            warnings.append(f"Inflation series skipped: {spec.label} has no data before {end}.")
+            continue
+        payload_inflation[key] = _entry(spec, name, series)
 
     payload = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "synthetic": provider_name == "synthetic",
         "assets": payload_assets,
+        "inflation": payload_inflation,
+        "warnings": warnings,
     }
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)

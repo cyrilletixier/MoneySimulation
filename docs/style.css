@@ -14,10 +14,12 @@
   --neg: #b3382c;
   --c1: #2f6db5;  /* actions US */
   --c2: #1f9e8f;  /* actions EU */
-  --c3: #d9a21b;  /* or */
+  --c3: #cdae24;  /* or */
   --c4: #6b7a8c;  /* dette d'Etat */
-  --c5: #c4573b;  /* obligations */
+  --c5: #b8456a;  /* obligations */
   --c6: #8a5a9e;  /* immobilier */
+  --c7: #ec7b22;  /* bitcoin */
+  --infl: #c0392b;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(29, 39, 51, .06), 0 4px 14px rgba(29, 39, 51, .05);
 }
@@ -39,10 +41,12 @@
     --neg: #f08a7e;
     --c1: #6aa3ea;
     --c2: #45c5b6;
-    --c3: #e8b840;
+    --c3: #e6cc55;
     --c4: #98a6b8;
-    --c5: #e4826a;
+    --c5: #e27a9a;
     --c6: #b88ccb;
+    --c7: #f5a04a;
+    --infl: #ff8a7a;
     --shadow: none;
   }
 }
@@ -171,13 +175,17 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .8rem; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.legend i.line { height: 2px; width: 14px; border-radius: 0; background: var(--ink); }
+.legend i.line { height: 2px; width: 16px; border-radius: 0; background: var(--ink); }
+.legend i.line.dashed { background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px); }
+.legend i.line.dotted { height: 3px; background: repeating-linear-gradient(90deg, var(--infl) 0 3px, transparent 3px 6px); }
 
 .chart { position: relative; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .total-line { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linejoin: round; }
+.chart .invested-line { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-dasharray: 6 4; }
+.chart .indexed-line { fill: none; stroke: var(--infl); stroke-width: 2.2; stroke-dasharray: 2 4; stroke-linecap: round; }
 .chart .hover-line { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: .6; }
 .tooltip {
   position: absolute; z-index: 2; pointer-events: none;

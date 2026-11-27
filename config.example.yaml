@@ -5,6 +5,8 @@ start_date: 2005-01-03        # date de départ (les ETF choisis ont de l'histor
 # end_date: 2025-12-31        # optionnel, défaut = aujourd'hui
 step: 1y                      # pas de calcul : 1y, 6m, 1q (trimestre), 1m...
 rebalance: true               # true = retour à l'allocation cible à chaque pas ; false = buy & hold
+monthly_contribution: 0        # versement mensuel, investi selon l'allocation cible (0 = aucun)
+inflation: eu                 # comparer à l'inflation : eu (zone euro, IPCH), us (CPI américain), ou supprimer la ligne
 
 # Allocation cible (en % ou en fractions, somme = 100 %)
 allocation:
@@ -14,6 +16,7 @@ allocation:
   gov_debt: 10
   bonds: 10
   real_estate: 10
+  # bitcoin: 5                 # exemple : ajouter du Bitcoin (la somme doit rester à 100)
 
 # Sources de données par classe d'actifs. Tout est optionnel : seuls les
 # actifs que vous voulez changer sont à préciser (voir `portfolio-sim assets`).

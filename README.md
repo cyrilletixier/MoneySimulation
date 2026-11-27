@@ -6,7 +6,7 @@ Vous donnez : une somme de départ, une date de départ et une stratégie (répa
 
 ## Site web
 
-Le dossier `docs/` contient un site statique : on choisit la **stratégie** (curseurs ou préréglages), la **somme de départ**, la **date de départ** (et de fin), le **pas** (annuel, semestriel, trimestriel, mensuel) et le rééquilibrage ; le résultat se recalcule en direct (indicateurs, graphique, tableau, export CSV, lien partageable).
+Le dossier `docs/` contient un site statique : on choisit la **stratégie** (curseurs ou préréglages, Bitcoin inclus), la **somme de départ**, un **versement mensuel** éventuel, la **date de départ** (et de fin), le **pas** (annuel, semestriel, trimestriel, mensuel), le rééquilibrage et un **indice d'inflation** de comparaison ; le résultat se recalcule en direct (indicateurs, graphique, tableau, export CSV, lien partageable).
 
 Le calcul tourne dans le navigateur (`docs/engine.js`, même logique que le moteur Python, vérifiée par des tests de parité). Les prix viennent d'un fichier `docs/data/prices.json` généré par `portfolio-sim export-data` à partir de Yahoo Finance.
 
@@ -48,6 +48,10 @@ portfolio-sim run --amount 100000 --start 2005-01-03
 # Via un fichier de configuration (voir config.example.yaml)
 portfolio-sim run --config config.example.yaml
 
+# 10 000 de départ + 200 par mois, 90 % actions US / 10 % Bitcoin, comparé à l'inflation zone euro
+portfolio-sim run --amount 10000 --start 2016-01-04 --monthly 200 --inflation eu \
+    --alloc us_equity=90 bitcoin=10
+
 # Autre stratégie, pas semestriel, sans rééquilibrage, export CSV + graphique
 portfolio-sim run --amount 50000 --start 2008-01-02 --step 6m --no-rebalance \
     --alloc us_equity=60 gov_debt=30 gold=10 --csv output/res.csv --plot output/res.png
@@ -73,10 +77,13 @@ print(result.metrics())  # rendement annualisé, volatilité, drawdown...
 
 ## Comment ça marche
 
-1. Les dates de calcul sont `départ`, `départ + 1 pas`, `départ + 2 pas`… jusqu'à la date de fin (aujourd'hui par défaut).
+1. Les dates de résultat sont `départ`, `départ + 1 pas`, `départ + 2 pas`… jusqu'à la date de fin (aujourd'hui par défaut). Avec un versement mensuel, le calcul se fait mois par mois en interne, et les résultats sont restitués à chaque pas.
 2. À chaque date, le prix de chaque actif est le dernier cours connu à cette date.
 3. Au départ, la somme est répartie selon l'allocation cible. Ensuite, chaque position évolue comme son actif.
 4. Avec `rebalance: true` (défaut), le portefeuille est ramené à l'allocation cible après chaque pas ; avec `false`, les positions dérivent librement (buy & hold).
+5. Le **versement mensuel** est investi le même quantième chaque mois, selon l'allocation cible.
+6. **Rendement annualisé** = taux de rendement interne, qui tient compte de la date de chaque versement (identique au rendement annualisé classique sans versement). **Volatilité, perte maximale et variations par période** utilisent un indice pondéré par le temps, que les versements ne faussent pas.
+7. **Inflation** : *valeur réelle* = valeur du portefeuille en pouvoir d'achat de la date de départ ; *capital indexé* = ce que vaudrait l'argent versé s'il suivait seulement l'inflation (si le portefeuille est au-dessus, il bat l'inflation).
 
 Le pas est configurable : `1y`, `6m`, `1q` (trimestre), `1m`… Le moteur est indépendant du pas.
 
@@ -92,6 +99,9 @@ Chaque classe d'actifs est associée à une série de prix via un *provider*. Va
 | `gov_debt` | Dette d'État | `IEF` (Treasuries US 7-10 ans) | 2002 |
 | `bonds` | Obligations | `LQD` (obligations d'entreprises US IG) | 2002 |
 | `real_estate` | Immobilier | `VNQ` (REIT US cotés) | 2004 |
+| `bitcoin` | Bitcoin | `BTC-USD` | 2014 |
+
+Indices d'inflation (FRED, mensuels) : `eu` = IPCH zone euro (`CP0000EZ19M086NEST`, depuis 1996), `us` = CPI américain (`CPIAUCSL`). Ils sont publiés avec 1 à 2 mois de retard : avec une comparaison à l'inflation, la date de fin est limitée en conséquence.
 
 Providers disponibles :
 
@@ -104,9 +114,10 @@ Les téléchargements sont mis en cache dans `.cache/` pour éviter de refaire d
 
 ## Limites connues (à garder en tête)
 
+- **Bitcoin** : très volatil, et seulement disponible depuis septembre 2014 (le site refuse une date de départ antérieure quand il est dans l'allocation).
 - **Devises** : la plupart des proxies sont en USD, `EXSA.DE` est en EUR. Aucune conversion de change n'est faite : le résultat mélange les devises. Une conversion via `EURUSD=X` est une évolution naturelle.
 - **Proxies imparfaits** : les ETF ne sont pas les indices ; l'immobilier par défaut est du REIT coté (volatil, corrélé aux actions), pas de l'immobilier physique. Les futures de l'or ne reflètent pas les coûts de détention.
-- **Pas de frais ni de fiscalité** : ni frais de gestion/transaction, ni impôts, ni inflation.
+- **Pas de frais ni de fiscalité** : ni frais de gestion/transaction, ni impôts (l'inflation, elle, est comparée à part).
 - **Historique** : la date de départ ne peut pas précéder le plus ancien historique des actifs choisis (une erreur explicite est levée).
 - Le passé ne préjuge pas de l'avenir ; ceci est un outil de simulation, pas un conseil en investissement.
 
@@ -121,6 +132,6 @@ Les connecteurs Yahoo et FRED sont testés sur des réponses simulées (pas d'ap
 
 ## Idées pour la suite
 
-- Conversion de devises, frais et fiscalité, apports/retraits périodiques (DCA).
+- Conversion de devises, frais et fiscalité, retraits périodiques.
 - Pas mensuel avec métriques plus fines, benchmark de comparaison.
 - Simulation de Monte-Carlo / scénarios futurs, interface web.

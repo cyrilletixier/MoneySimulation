@@ -39,6 +39,8 @@ def load_config(path: str | Path) -> SimulationConfig:
         end_date=_as_date(raw.get("end_date")),
         step_months=parse_step(raw.get("step", "1y")),
         rebalance=bool(raw.get("rebalance", True)),
+        monthly_contribution=float(raw.get("monthly_contribution", 0) or 0),
+        inflation=raw.get("inflation") or None,
         assets=assets,
         **kwargs,
     )

@@ -35,21 +35,40 @@ def render_report(result: SimulationResult) -> str:
     for k in cfg.allocation:
         show[labels[k]] = t[k].map(_fmt_money).values
     show["TOTAL"] = t["total"].map(_fmt_money).values
+    if cfg.monthly_contribution > 0:
+        show["Versé"] = t["invested"].map(_fmt_money).values
+    if "real_total" in t:
+        show["Réel"] = t["real_total"].map(_fmt_money).values
+        show["Indexé"] = t["indexed_capital"].map(_fmt_money).values
     show["Perf"] = t["return"].map(lambda r: "" if pd.isna(r) else f"{r:+.1%}").values
     m = result.metrics()
+    head = (f"Départ : {cfg.start_date}  |  Montant : {_fmt_money(cfg.initial_amount)}  |  "
+            f"Pas : {cfg.step_months} mois  |  Rééquilibrage : {'oui' if cfg.rebalance else 'non'}")
+    if cfg.monthly_contribution > 0:
+        head += f"  |  Versement mensuel : {_fmt_money(cfg.monthly_contribution)}"
     lines = [
-        f"Départ : {cfg.start_date}  |  Montant : {_fmt_money(cfg.initial_amount)}  |  "
-        f"Pas : {cfg.step_months} mois  |  Rééquilibrage : {'oui' if cfg.rebalance else 'non'}",
+        head,
         "Allocation cible : " + ", ".join(f"{labels[k]} {w:.0%}" for k, w in cfg.allocation.items()),
         "",
         show.to_string(),
         "",
-        f"Valeur finale      : {_fmt_money(m['final_value'])}  ({m['total_return']:+.1%} sur {m['years']:.1f} ans)",
-        f"Rendement annualisé: {m['cagr']:+.2%}",
+        f"Valeur finale      : {_fmt_money(m['final_value'])}  (capital versé : {_fmt_money(m['invested'])}, "
+        f"gain : {_fmt_money(m['gain'])}, {m['total_return']:+.1%} sur {m['years']:.1f} ans)",
+        f"Rendement annualisé: {m['cagr']:+.2%}" + ("   (pondéré par les versements)" if cfg.monthly_contribution > 0 else ""),
         f"Volatilité annuelle: {m['volatility']:.2%}   (sur la base du pas choisi)",
         f"Perte max (drawdown): {m['max_drawdown']:.1%}   (mesurée aux dates du pas)",
         f"Meilleure / pire période : {m['best_period']:+.1%} / {m['worst_period']:+.1%}",
     ]
+    if "real_final_value" in m:
+        name = cfg.inflation_series[cfg.inflation].label
+        lines += [
+            "",
+            f"Inflation ({name}) : {m['inflation_cagr']:+.2%} par an en moyenne",
+            f"Valeur finale réelle : {_fmt_money(m['real_final_value'])}  (pouvoir d'achat, en monnaie de la date de départ)",
+            f"Rendement réel annualisé : {m['real_cagr']:+.2%}",
+            f"Capital simplement indexé sur l'inflation : {_fmt_money(m['indexed_capital'])}  "
+            f"(le portefeuille fait {m['vs_indexed']:+.1%} par rapport à ce repère)",
+        ]
     return "\n".join(lines)
 
 
@@ -67,6 +86,11 @@ def _plot(result: SimulationResult, path: Path) -> None:
     ax.stackplot(t.index, [t[k] for k in cfg.allocation],
                  labels=[cfg.assets[k].label for k in cfg.allocation], alpha=0.85)
     ax.plot(t.index, t["total"], color="black", linewidth=1.5, label="Total")
+    if cfg.monthly_contribution > 0:
+        ax.plot(t.index, t["invested"], color="black", linewidth=1, linestyle="--", label="Capital versé")
+    if "indexed_capital" in t:
+        ax.plot(t.index, t["indexed_capital"], color="crimson", linewidth=1.2, linestyle=":",
+                label="Capital indexé sur l'inflation")
     ax.set_ylabel("Valeur")
     ax.set_title("Évolution du portefeuille")
     ax.legend(loc="upper left", fontsize=8)
@@ -104,6 +128,12 @@ def _build_config(args: argparse.Namespace) -> SimulationConfig:
         cfg.step_months = parse_step(args.step)
     if args.no_rebalance:
         cfg.rebalance = False
+    if args.monthly is not None:
+        cfg.monthly_contribution = args.monthly
+    if args.inflation:
+        cfg.inflation = args.inflation
+    # re-run validation after overrides
+    cfg.__post_init__()
     return cfg
 
 
@@ -165,6 +195,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--alloc", nargs="+", metavar="CLE=POURCENT",
                    help="Ex : us_equity=30 eu_equity=30 gold=10 gov_debt=10 bonds=10 real_estate=10")
     r.add_argument("--no-rebalance", action="store_true", help="Pas de rééquilibrage (buy & hold)")
+    r.add_argument("--monthly", type=float, help="Versement mensuel, investi selon l'allocation cible")
+    r.add_argument("--inflation", choices=["eu", "us"],
+                   help="Comparer à l'inflation : eu = zone euro (IPCH), us = États-Unis (CPI)")
     r.add_argument("--provider", choices=["yahoo", "fred", "csv", "synthetic"],
                    help="Force une source pour tous les actifs (ex : synthetic pour un test hors-ligne)")
     r.add_argument("--csv-dir", default="data", help="Dossier des CSV (source csv)")

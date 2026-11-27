@@ -21,7 +21,10 @@ PARAMS: dict[str, tuple[float, float]] = {
     "IEF": (0.04, 0.07),
     "LQD": (0.05, 0.08),
     "VNQ": (0.08, 0.22),
+    "BTC-USD": (0.45, 0.75),
 }
+# Consumer price indices: monthly series (dated on the 1st), ~2% inflation per year.
+MONTHLY_INDEX_SYMBOLS = {"CP0000EZ19M086NEST", "CPIAUCSL"}
 _DEFAULT = (0.06, 0.15)
 _FIRST_DAY = "1990-01-01"
 _LAST_DAY = "2035-12-31"
@@ -31,9 +34,13 @@ class SyntheticProvider:
     name = "synthetic"
 
     def get_prices(self, symbol: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
+        rng = np.random.default_rng(zlib.crc32(symbol.encode()))
+        if symbol in MONTHLY_INDEX_SYMBOLS:
+            months = pd.date_range(_FIRST_DAY, _LAST_DAY, freq="MS")
+            growth = 0.02 / 12 + 0.002 * rng.standard_normal(len(months))
+            return clean_series(pd.Series(100 * np.exp(np.cumsum(growth)), index=months), symbol)
         mu, sigma = PARAMS.get(symbol, _DEFAULT)
         days = pd.bdate_range(_FIRST_DAY, _LAST_DAY)
-        rng = np.random.default_rng(zlib.crc32(symbol.encode()))
         dt = 1 / 252
         shocks = rng.standard_normal(len(days))
         log_ret = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * shocks

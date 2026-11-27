@@ -25,12 +25,14 @@
     { name: "60 / 40", w: { us_equity: 30, eu_equity: 30, gov_debt: 20, bonds: 20 } },
     { name: "Prudent", w: { us_equity: 10, eu_equity: 10, gold: 10, gov_debt: 30, bonds: 30, real_estate: 10 } },
     { name: "Dynamique", w: { us_equity: 40, eu_equity: 40, gold: 10, real_estate: 10 } },
+    { name: "Défaut + Bitcoin", w: { us_equity: 28, eu_equity: 27, gold: 10, gov_debt: 10, bonds: 10, real_estate: 10, bitcoin: 5 } },
     { name: "100 % actions US", w: { us_equity: 100 } },
   ];
 
   // ---------- état ----------
   let data = null;
   let series = null;
+  let infl = {};
   let keys = [];
   let lastResult = null;
   let timer = null;
@@ -54,6 +56,7 @@
       return;
     }
     series = E.prepareSeries(data.assets);
+    infl = E.prepareSeries(data.inflation);
     keys = Object.keys(series);
 
     if (data.synthetic) {
@@ -64,6 +67,7 @@
       b.hidden = false;
     }
     renderDataNote();
+    buildInflationOptions();
     buildAllocationRows();
     buildPresets();
     applyInitialState();
@@ -80,6 +84,17 @@
   }
 
   // ---------- construction du formulaire ----------
+  function buildInflationOptions() {
+    const sel = $("inflation");
+    Object.entries(infl).forEach(([k, s]) => {
+      const o = document.createElement("option");
+      o.value = k;
+      o.textContent = s.label;
+      sel.appendChild(o);
+    });
+    $("inflation-field").hidden = Object.keys(infl).length === 0;
+  }
+
   function buildAllocationRows() {
     const host = $("alloc");
     keys.forEach((k, i) => {
@@ -87,7 +102,7 @@
       const row = document.createElement("div");
       row.className = "asset";
       row.innerHTML = `
-        <label class="name" for="num-${k}"><span class="dot" style="background:var(--c${(i % 6) + 1})"></span>
+        <label class="name" for="num-${k}"><span class="dot" style="background:var(--c${(i % 7) + 1})"></span>
           <span>${a.label} <span class="sym">${a.symbol}</span></span></label>
         <div class="pct"><input id="num-${k}" type="number" min="0" max="100" step="1" inputmode="decimal" aria-label="${a.label} en pourcentage"><span>%</span></div>
         <input id="rng-${k}" type="range" min="0" max="100" step="1" aria-label="${a.label}, curseur">
@@ -129,14 +144,17 @@
 
   function applyInitialState() {
     const params = new URLSearchParams(location.hash.slice(1));
-    const earliestAll = E.earliestStart(series, keys);
-    const defaultStart = Math.max(E.parseISO("2005-01-03"), earliestAll);
+    const defaultKeys = keys.filter((k) => PRESETS[0].w[k] > 0);
+    const defaultStart = Math.max(E.parseISO("2005-01-03"), E.earliestStart(series, defaultKeys));
 
     $("amount").value = params.get("a") || "100000";
     $("start").value = params.get("s") || E.toISO(defaultStart);
     $("end").value = params.get("e") || "";
     if (["12", "6", "3", "1"].includes(params.get("p"))) $("step").value = params.get("p");
     $("rebalance").checked = params.get("r") !== "0";
+    $("monthly").value = params.get("m") || "0";
+    const iq = params.get("i");
+    $("inflation").value = iq !== null && (iq === "" || infl[iq]) ? iq : Object.keys(infl)[0] || "";
 
     const wParam = params.get("w");
     if (wParam) {
@@ -157,6 +175,8 @@
     if ($("end").value) p.set("e", $("end").value);
     p.set("p", $("step").value);
     p.set("r", $("rebalance").checked ? "1" : "0");
+    p.set("m", $("monthly").value || "0");
+    p.set("i", $("inflation").value);
     p.set("w", keys.map((k) => w[k]).join(","));
     history.replaceState(null, "", "#" + p.toString());
   }
@@ -229,10 +249,18 @@
       );
     }
     const used = keys.filter((k) => w[k] > 0);
-    const earliest = E.earliestStart(series, used);
-    const latest = E.latestEnd(series, used);
+    const inflKey = $("inflation").value;
+    const cpi = inflKey && infl[inflKey] ? infl[inflKey] : null;
+    let earliest = E.earliestStart(series, used);
+    let latest = E.latestEnd(series, used);
+    if (cpi) {
+      // l'indice d'inflation est publié avec ~1 à 2 mois de retard
+      earliest = Math.max(earliest, cpi.dates[0]);
+      latest = Math.min(latest, E.cpiLastUsable(cpi));
+    }
     $("range-hint").textContent =
-      `Données disponibles du ${fmtDate(earliest)} au ${fmtDate(latest)} pour cette allocation.`;
+      `Données disponibles du ${fmtDate(earliest)} au ${fmtDate(latest)} pour cette allocation` +
+      (cpi ? " et cet indice d'inflation." : ".");
     for (const id of ["start", "end"]) {
       $(id).min = E.toISO(earliest);
       $(id).max = E.toISO(latest);
@@ -240,6 +268,8 @@
 
     const amount = parseFloat($("amount").value);
     if (!(amount > 0)) return showStatus("Indiquez une somme de départ positive.");
+    const monthly = parseFloat($("monthly").value) || 0;
+    if (monthly < 0) return showStatus("Le versement mensuel ne peut pas être négatif.");
     if (!$("start").value) return showStatus("Choisissez une date de départ.", false);
 
     const cfg = {
@@ -248,6 +278,8 @@
       end: $("end").value ? E.parseISO($("end").value) : latest,
       stepMonths: Number($("step").value),
       rebalance: $("rebalance").checked,
+      monthlyContribution: monthly,
+      cpi,
       allocation: Object.fromEntries(used.map((k) => [k, w[k] / 100])),
     };
     try {
@@ -270,46 +302,71 @@
   }
 
   // ---------- rendu ----------
-  const colorOf = (k) => `var(--c${(keys.indexOf(k) % 6) + 1})`;
+  const colorOf = (k) => `var(--c${(keys.indexOf(k) % 7) + 1})`;
+
+  const hasInvested = (res) => res.invested.some((v) => v !== res.invested[0]);
+  const signedNum = (x) => (x < 0 ? "−" : "+") + fmtNum(Math.abs(x));
 
   function render(res, m, cfg) {
     $("status").hidden = true;
     $("output").hidden = false;
-    renderKpis(m);
+    renderKpis(res, m, cfg);
     renderLegend(res);
     drawChart(res);
     renderTable(res);
   }
 
-  function renderKpis(m) {
+  function renderKpis(res, m, cfg) {
     const kpi = (cls, k, v, s, vcls = "") =>
       `<div class="kpi ${cls}"><div class="k">${k}</div><div class="v ${vcls}">${v}</div><div class="s">${s}</div></div>`;
+    const contrib = cfg.monthlyContribution > 0;
     const years = m.years.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
-    $("kpis").innerHTML =
-      kpi("main", "Valeur finale", fmtNum(m.final), `pour ${fmtNum(m.initial)} au départ · ${years} ans`) +
-      kpi("", "Rendement total", fmtPct(m.totalReturn, 1, true), "sur toute la période", signClass(m.totalReturn)) +
-      kpi("", "Rendement annualisé", fmtPct(m.cagr, 2, true), "moyenne géométrique", signClass(m.cagr)) +
-      kpi("", "Volatilité annuelle", fmtPct(m.volatility, 1), "d'après le pas choisi") +
-      kpi("", "Perte maximale", fmtPct(m.maxDrawdown, 1), "mesurée aux dates du pas", "neg") +
-      kpi(
-        "",
-        "Meilleure / pire période",
-        `<span class="pos">${fmtPct(m.best, 1, true)}</span> / <span class="neg">${fmtPct(m.worst, 1, true)}</span>`,
-        "sur un pas"
+    const parts = [
+      kpi("main", "Valeur finale", fmtNum(m.final),
+        contrib
+          ? `pour ${fmtNum(m.invested)} versés · ${years} ans`
+          : `pour ${fmtNum(m.initial)} au départ · ${years} ans`),
+      kpi("", "Gain", signedNum(m.gain), `${fmtPct(m.totalReturn, 1, true)} du capital versé`, signClass(m.gain)),
+      kpi("", "Rendement annualisé", fmtPct(m.cagr, 2, true),
+        contrib ? "pondéré par les versements" : "moyenne géométrique", signClass(m.cagr)),
+    ];
+    if (contrib) parts.push(kpi("", "Capital versé", fmtNum(m.invested), "départ + versements mensuels"));
+    if (m.realFinal !== undefined) {
+      parts.push(
+        kpi("", "Valeur finale réelle", fmtNum(m.realFinal), "pouvoir d'achat, en monnaie du départ"),
+        kpi("", "Rendement réel annualisé", fmtPct(m.realCagr, 2, true),
+          `inflation moyenne ${fmtPct(m.inflationCagr, 2)}`, signClass(m.realCagr)),
+        kpi("", "Capital indexé inflation", fmtNum(m.indexedCapital), "l'argent versé, qui suit juste l'inflation"),
+        kpi("", "Écart vs inflation", fmtPct(m.vsIndexed, 1, true), "portefeuille / capital indexé", signClass(m.vsIndexed))
       );
+    }
+    parts.push(
+      kpi("", "Volatilité annuelle", fmtPct(m.volatility, 1), "d'après le pas choisi"),
+      kpi("", "Perte maximale", fmtPct(m.maxDrawdown, 1), "mesurée aux dates du pas", "neg"),
+      kpi("", "Meilleure / pire période",
+        `<span class="pos">${fmtPct(m.best, 1, true)}</span> / <span class="neg">${fmtPct(m.worst, 1, true)}</span>`,
+        "sur un pas")
+    );
+    $("kpis").innerHTML = parts.join("");
   }
 
   function renderLegend(res) {
     $("legend").innerHTML =
       res.keys.map((k) => `<span><i style="background:${colorOf(k)}"></i>${series[k].label}</span>`).join("") +
-      `<span><i class="line"></i>Total</span>`;
+      `<span><i class="line"></i>Total</span>` +
+      (hasInvested(res) ? `<span><i class="line dashed"></i>Capital versé</span>` : "") +
+      (res.indexed ? `<span><i class="line dotted"></i>Capital indexé sur l'inflation</span>` : "");
   }
 
   function renderTable(res) {
+    const inv = hasInvested(res);
     const head =
       "<thead><tr><th>Date</th>" +
       res.keys.map((k) => `<th>${series[k].label}</th>`).join("") +
-      "<th>Total</th><th>Variation</th></tr></thead>";
+      "<th>Total</th>" +
+      (inv ? "<th>Versé</th>" : "") +
+      (res.real ? "<th>Valeur réelle</th><th>Indexé inflation</th>" : "") +
+      "<th>Variation</th></tr></thead>";
     const body = res.dates
       .map((d, i) => {
         const r = res.returns[i];
@@ -317,6 +374,8 @@
           `<tr><td>${fmtDate(d)}</td>` +
           res.keys.map((k) => `<td>${fmtNum(res.values[k][i])}</td>`).join("") +
           `<td class="total">${fmtNum(res.total[i])}</td>` +
+          (inv ? `<td>${fmtNum(res.invested[i])}</td>` : "") +
+          (res.real ? `<td>${fmtNum(res.real[i])}</td><td>${fmtNum(res.indexed[i])}</td>` : "") +
           `<td class="${signClass(r)}">${r === null ? "" : fmtPct(r, 1, true)}</td></tr>`
         );
       })
@@ -340,7 +399,9 @@
     const iw = W - m.l - m.r, ih = H - m.t - m.b;
     const x0 = res.dates[0], x1 = res.dates[res.dates.length - 1];
     const X = (t) => m.l + ((t - x0) / (x1 - x0)) * iw;
-    const ticks = niceTicks(Math.max(...res.total), 5);
+    const showInvested = hasInvested(res);
+    const top = Math.max(...res.total, ...(showInvested ? res.invested : []), ...(res.indexed || []));
+    const ticks = niceTicks(top, 5);
     const yMax = ticks[ticks.length - 1];
     const Y = (v) => m.t + ih - (v / yMax) * ih;
 
@@ -360,7 +421,11 @@
         return `<polygon points="${top.concat(bottom).join(" ")}" style="fill:${colorOf(k)}" fill-opacity="0.88"></polygon>`;
       })
       .join("");
-    const totalLine = res.dates.map((_, i) => pt(i, res.total)).join(" ");
+    const line = (arr) => res.dates.map((_, i) => pt(i, arr)).join(" ");
+    const totalLine = line(res.total);
+    const extraLines =
+      (showInvested ? `<polyline class="invested-line" points="${line(res.invested)}"></polyline>` : "") +
+      (res.indexed ? `<polyline class="indexed-line" points="${line(res.indexed)}"></polyline>` : "");
 
     // axes
     const yGrid = ticks
@@ -388,7 +453,7 @@
     host.innerHTML =
       `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution de la valeur du portefeuille par classe d'actifs">` +
       yGrid + areas +
-      `<polyline class="total-line" points="${totalLine}"></polyline>` +
+      `<polyline class="total-line" points="${totalLine}"></polyline>` + extraLines +
       xLabels +
       `<line class="hover-line" y1="${m.t}" y2="${m.t + ih}" x1="0" x2="0" visibility="hidden"></line>` +
       `<rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"></rect></svg>` +
@@ -417,7 +482,10 @@
           .reverse()
           .map((k) => `<div class="r"><span><i style="background:${colorOf(k)}"></i>${series[k].label}</span><span>${fmtNum(res.values[k][best])}</span></div>`)
           .join("") +
-        `<div class="r tot"><span>Total</span><span>${fmtNum(res.total[best])}</span></div>`;
+        `<div class="r tot"><span>Total</span><span>${fmtNum(res.total[best])}</span></div>` +
+        (showInvested ? `<div class="r"><span>Capital versé</span><span>${fmtNum(res.invested[best])}</span></div>` : "") +
+        (res.real ? `<div class="r"><span>Valeur réelle</span><span>${fmtNum(res.real[best])}</span></div>` : "") +
+        (res.indexed ? `<div class="r"><span>Capital indexé</span><span>${fmtNum(res.indexed[best])}</span></div>` : "");
       tip.hidden = false;
       const leftPx = (gx * rect.width) / W;
       const flip = leftPx > rect.width * 0.55;
@@ -438,17 +506,21 @@
   function exportCsv() {
     if (!lastResult) return;
     const { res } = lastResult;
+    const inv = hasInvested(res);
     const num = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+    const header = ["Date", ...res.keys.map((k) => series[k].label), "Total"];
+    if (inv) header.push("Capital versé");
+    if (res.real) header.push("Valeur réelle", "Capital indexé inflation");
+    header.push("Variation");
     const lines = [
-      ["Date", ...res.keys.map((k) => series[k].label), "Total", "Variation"].join(";"),
-      ...res.dates.map((d, i) =>
-        [
-          E.toISO(d),
-          ...res.keys.map((k) => num(res.values[k][i])),
-          num(res.total[i]),
-          res.returns[i] === null ? "" : String(Math.round(res.returns[i] * 10000) / 100).replace(".", ","),
-        ].join(";")
-      ),
+      header.join(";"),
+      ...res.dates.map((d, i) => {
+        const row = [E.toISO(d), ...res.keys.map((k) => num(res.values[k][i])), num(res.total[i])];
+        if (inv) row.push(num(res.invested[i]));
+        if (res.real) row.push(num(res.real[i]), num(res.indexed[i]));
+        row.push(res.returns[i] === null ? "" : String(Math.round(res.returns[i] * 10000) / 100).replace(".", ","));
+        return row.join(";");
+      }),
     ];
     const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
