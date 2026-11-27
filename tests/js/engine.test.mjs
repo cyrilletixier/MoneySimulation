@@ -117,3 +117,20 @@ test("inflation : données trop courtes", () => {
 test("cpiLastUsable : un mois de tolérance après la dernière valeur", () => {
   assert.equal(E.toISO(E.cpiLastUsable(cpi)), "2022-02-01");
 });
+
+test("prepareSeries long: prefix history before modern series", async () => {
+  const E = (await import("../../docs/engine.js")).default ?? (await import("../../docs/engine.js"));
+  const entries = {
+    x: {
+      label: "X", symbol: "X", dates: ["2000-01-03", "2000-01-04"], prices: [100, 101],
+      history: { join: "2000-01-03", dates: ["1999-12-30", "1999-12-31"], prices: [98, 99],
+                 segments: [{ from: "1999-12-30", to: "1999-12-31", kind: "reconstructed", label: "r" }] },
+    },
+  };
+  const short = E.prepareSeries(entries);
+  const long = E.prepareSeries(entries, { long: true });
+  assert.equal(short.x.dates.length, 2);
+  assert.equal(long.x.dates.length, 4);
+  assert.deepEqual(long.x.prices, [98, 99, 100, 101]);
+  assert.equal(long.x.segments[0].kind, "reconstructed");
+});

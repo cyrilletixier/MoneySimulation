@@ -17,7 +17,7 @@ SCRIPT = """
 const E = require(process.argv[1]);
 const data = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
 const cfg = JSON.parse(process.argv[3]);
-const series = E.prepareSeries(data.assets);
+const series = E.prepareSeries(data.assets, { long: !!cfg.longHistory });
 const infl = E.prepareSeries(data.inflation);
 const run = {
   ...cfg, start: E.parseISO(cfg.start), end: E.parseISO(cfg.end),
@@ -29,6 +29,8 @@ console.log(JSON.stringify({ r, m: E.metrics(r, cfg.stepMonths) }));
 
 BASE = {"us_equity": 0.30, "eu_equity": 0.30, "gold": 0.10, "gov_debt": 0.10, "bonds": 0.10, "real_estate": 0.10}
 WITH_BTC = {"us_equity": 0.5, "eu_equity": 0.3, "bitcoin": 0.2}
+LONG = {"us_equity": 0.4, "gold": 0.2, "gov_debt": 0.3, "real_estate": 0.1}  # REIT history starts in 1996
+LONG_OLD = {"us_equity": 0.5, "gold": 0.2, "gov_debt": 0.3}
 
 
 @pytest.fixture(scope="module")
@@ -40,31 +42,34 @@ def data_file(tmp_path_factory):
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 @pytest.mark.parametrize(
-    "alloc,step,rebalance,monthly,inflation",
+    "alloc,step,rebalance,monthly,inflation,long_history,start",
     [
-        (BASE, 12, True, 0, None),
-        (BASE, 12, False, 0, None),
-        (BASE, 6, True, 0, None),
-        (BASE, 1, True, 0, None),
-        (BASE, 3, False, 0, None),
-        (BASE, 12, True, 500, None),
-        (BASE, 12, False, 500, None),
-        (BASE, 6, True, 250, "eu"),
-        (WITH_BTC, 12, True, 300, "us"),
-        (WITH_BTC, 3, False, 0, "eu"),
+        (BASE, 12, True, 0, None, False, date(2016, 1, 31)),
+        (BASE, 12, False, 0, None, False, date(2016, 1, 31)),
+        (BASE, 6, True, 0, None, False, date(2016, 1, 31)),
+        (BASE, 1, True, 0, None, False, date(2016, 1, 31)),
+        (BASE, 3, False, 0, None, False, date(2016, 1, 31)),
+        (BASE, 12, True, 500, None, False, date(2016, 1, 31)),
+        (BASE, 12, False, 500, None, False, date(2016, 1, 31)),
+        (BASE, 6, True, 250, "eu", False, date(2016, 1, 31)),
+        (WITH_BTC, 12, True, 300, "us", False, date(2016, 1, 31)),
+        (WITH_BTC, 3, False, 0, "eu", False, date(2016, 1, 31)),
+        (LONG, 12, True, 0, None, True, date(1998, 3, 31)),
+        (LONG_OLD, 12, True, 200, "us", True, date(1975, 1, 31)),
+        (LONG_OLD, 3, False, 0, "us", True, date(1965, 6, 30)),
     ],
 )
-def test_js_matches_python(data_file, alloc, step, rebalance, monthly, inflation):
-    start, end = date(2016, 1, 31), date(2023, 7, 15)
+def test_js_matches_python(data_file, alloc, step, rebalance, monthly, inflation, long_history, start):
+    end = date(2023, 7, 15)
     py = simulate(
         SimulationConfig(initial_amount=100_000, start_date=start, end_date=end, allocation=alloc,
                          step_months=step, rebalance=rebalance, monthly_contribution=monthly,
-                         inflation=inflation),
+                         inflation=inflation, long_history=long_history),
         SyntheticProvider(),
     )
     cfg = {"amount": 100_000, "start": str(start), "end": str(end), "stepMonths": step,
            "rebalance": rebalance, "allocation": alloc, "monthlyContribution": monthly,
-           "inflation": inflation}
+           "inflation": inflation, "longHistory": long_history}
     out = subprocess.run(
         ["node", "-e", SCRIPT, str(ROOT / "docs" / "engine.js"), str(data_file), json.dumps(cfg)],
         capture_output=True, text=True, check=True,

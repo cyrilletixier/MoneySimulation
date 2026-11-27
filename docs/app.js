@@ -32,6 +32,7 @@
   // ---------- état ----------
   let data = null;
   let series = null;
+  let hasLong = false;
   let infl = {};
   let keys = [];
   let lastResult = null;
@@ -56,6 +57,8 @@
       return;
     }
     series = E.prepareSeries(data.assets);
+    hasLong = Object.values(data.assets).some((a) => a.history);
+    $("history-field").hidden = !hasLong;
     infl = E.prepareSeries(data.inflation);
     keys = Object.keys(series);
 
@@ -142,12 +145,45 @@
     return w;
   }
 
+  function setHistory(long) {
+    series = E.prepareSeries(data.assets, { long });
+    keys = Object.keys(series);
+  }
+
+  function renderSources(used) {
+    const box = $("sources");
+    const long = $("history").value === "long";
+    const items = used.filter((k) => series[k].segments);
+    box.hidden = !long || items.length === 0;
+    if (box.hidden) return;
+    const kinds = { market: "marché", reconstructed: "reconstitué", synthetic: "synthétique" };
+    $("sources-body").innerHTML = items
+      .map((k) => {
+        const segs = series[k].segments
+          .map(
+            (g) =>
+              `<li><span class="tag ${g.kind}">${kinds[g.kind] || g.kind}</span> ${esc(g.label)} <span class="muted">(${g.from.slice(0, 7)} → ${g.to.slice(0, 7)})</span></li>`
+          )
+          .join("");
+        return `<div class="src"><strong>${esc(series[k].label)}</strong><ul>${segs}</ul></div>`;
+      })
+      .join("");
+  }
+
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
   function applyInitialState() {
     const params = new URLSearchParams(location.hash.slice(1));
     const defaultKeys = keys.filter((k) => PRESETS[0].w[k] > 0);
     const defaultStart = Math.max(E.parseISO("2005-01-03"), E.earliestStart(series, defaultKeys));
 
     $("amount").value = params.get("a") || "100000";
+    if (hasLong && params.get("h") === "long") {
+      $("history").value = "long";
+      setHistory(true);
+    }
     $("start").value = params.get("s") || E.toISO(defaultStart);
     $("end").value = params.get("e") || "";
     if (["12", "6", "3", "1"].includes(params.get("p"))) $("step").value = params.get("p");
@@ -176,6 +212,7 @@
     p.set("p", $("step").value);
     p.set("r", $("rebalance").checked ? "1" : "0");
     p.set("m", $("monthly").value || "0");
+    if ($("history").value === "long") p.set("h", "long");
     p.set("i", $("inflation").value);
     p.set("w", keys.map((k) => w[k]).join(","));
     history.replaceState(null, "", "#" + p.toString());
@@ -194,6 +231,10 @@
       schedule();
     });
     $("form").addEventListener("change", schedule);
+    $("history").addEventListener("change", () => {
+      setHistory($("history").value === "long");
+      recalc();
+    });
     $("presets").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-index]");
       if (!b) return;
@@ -258,9 +299,16 @@
       earliest = Math.max(earliest, cpi.dates[0]);
       latest = Math.min(latest, E.cpiLastUsable(cpi));
     }
+    let limit = "";
+    if (used.length) {
+      const lim = used.reduce((a, b) => (series[b].dates[0] > series[a].dates[0] ? b : a), used[0]);
+      if (!cpi || series[lim].dates[0] >= cpi.dates[0]) limit = ` (limité par : ${series[lim].label})`;
+      else limit = " (limité par l'indice d'inflation)";
+    }
     $("range-hint").textContent =
       `Données disponibles du ${fmtDate(earliest)} au ${fmtDate(latest)} pour cette allocation` +
-      (cpi ? " et cet indice d'inflation." : ".");
+      (cpi ? " et cet indice d'inflation" : "") + limit + ".";
+    renderSources(used);
     for (const id of ["start", "end"]) {
       $(id).min = E.toISO(earliest);
       $(id).max = E.toISO(latest);

@@ -41,6 +41,7 @@ def load_config(path: str | Path) -> SimulationConfig:
         rebalance=bool(raw.get("rebalance", True)),
         monthly_contribution=float(raw.get("monthly_contribution", 0) or 0),
         inflation=raw.get("inflation") or None,
+        long_history=bool(raw.get("long_history", False)),
         assets=assets,
         **kwargs,
     )

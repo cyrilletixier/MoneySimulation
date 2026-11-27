@@ -43,7 +43,18 @@
           <input id="end" type="date">
         </div>
       </div>
+      <div class="field" id="history-field" hidden>
+        <label for="history">Historique des données</label>
+        <select id="history">
+          <option value="market" selected>Marché uniquement (fonds réels)</option>
+          <option value="long">Historique long (séries reconstituées)</option>
+        </select>
+      </div>
       <p id="range-hint" class="hint"></p>
+      <details id="sources" class="sources" hidden>
+        <summary>Sources par période</summary>
+        <div id="sources-body"></div>
+      </details>
 
       <div class="field" id="inflation-field">
         <label for="inflation">Comparer à l'inflation</label>
@@ -106,7 +117,7 @@
 
   <footer class="wrap foot">
     <p id="data-note"></p>
-    <p>Limites&nbsp;: chaque classe d'actifs est représentée par un fonds ou un indice coté (proxy) ; les montants ne sont pas convertis entre devises (la plupart des proxies sont en USD, l'Europe en EUR) ; ni frais ni fiscalité. Les versements mensuels sont investis le même jour de chaque mois, selon l'allocation cible. L'inflation vient de l'indice des prix à la consommation choisi (publié avec 1 à 2 mois de retard) ; le « capital indexé » est ce que vaudrait l'argent versé s'il suivait simplement l'inflation. Le Bitcoin est très volatil et n'existe dans les données que depuis septembre 2014. Le passé ne préjuge pas de l'avenir&nbsp;: simulation à but informatif, pas un conseil en investissement.</p>
+    <p>Historique long&nbsp;: avant la création des fonds, les séries sont reconstituées (actions US&nbsp;: indice S&amp;P&nbsp;500 depuis 1928 + dividendes mensuels de Shiller ; dette d'État&nbsp;: obligation fictive à 10 ans à partir des taux de Shiller ; or&nbsp;: cours mensuel de la Banque mondiale depuis 1960 ; immobilier&nbsp;: REIT VGSIX depuis 1996). Ces reconstitutions sont des approximations (sans frais ni écarts de réplication) et se raccordent à la série du fonds à sa date de création. Actions européennes, obligations d'entreprises et Bitcoin n'ont pas d'historique plus ancien. Limites&nbsp;: chaque classe d'actifs est représentée par un fonds ou un indice coté (proxy) ; les montants ne sont pas convertis entre devises (la plupart des proxies sont en USD, l'Europe en EUR) ; ni frais ni fiscalité. Les versements mensuels sont investis le même jour de chaque mois, selon l'allocation cible. L'inflation vient de l'indice des prix à la consommation choisi (publié avec 1 à 2 mois de retard) ; le « capital indexé » est ce que vaudrait l'argent versé s'il suivait simplement l'inflation. Le Bitcoin est très volatil et n'existe dans les données que depuis septembre 2014. Le passé ne préjuge pas de l'avenir&nbsp;: simulation à but informatif, pas un conseil en investissement.</p>
   </footer>
 
   <script src="engine.js"></script>

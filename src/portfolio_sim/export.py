@@ -14,10 +14,13 @@ from pathlib import Path
 
 import pandas as pd
 
+from .longhistory import LongHistoryBuilder
 from .models import DEFAULT_ASSETS, INFLATION_SERIES, AssetSpec
 from .providers import DataError, PriceProvider, build_provider
 
 DEFAULT_START = "1990-01-01"
+INFLATION_START = "1940-01-01"  # US CPI goes back to 1947; used by the long-history mode
+PROVIDER_NAMES = {"yahoo": "Yahoo Finance", "fred": "FRED", "csv": "CSV", "synthetic": "synthétique"}
 
 
 def _fetch_with_retry(provider: PriceProvider, spec: AssetSpec, start: pd.Timestamp,
@@ -53,6 +56,7 @@ def export_prices(
     end: date | None = None,
     assets: dict[str, AssetSpec] | None = None,
     inflation: dict[str, AssetSpec] | None = None,
+    long_history: bool = True,
     cache_dir: str | None = None,
     csv_dir: str = "data",
     retries: int = 3,
@@ -62,8 +66,9 @@ def export_prices(
 
     Raises DataError (and writes nothing) if any *asset* cannot be fetched, so a
     scheduled refresh never publishes a partial or silently degraded file.
-    Inflation series are optional: one that fails is left out and reported in
-    payload["warnings"], and the site simply hides that comparison.
+    Inflation series and long histories are optional: one that fails is left out and
+    reported in payload["warnings"], and the site simply hides that comparison / that
+    asset's older history.
     """
     assets = DEFAULT_ASSETS if assets is None else assets
     inflation = INFLATION_SERIES if inflation is None else inflation
@@ -75,6 +80,7 @@ def export_prices(
         return providers.setdefault(name, build_provider(name, cache_dir=cache_dir, csv_dir=csv_dir))
 
     payload_assets: dict[str, dict] = {}
+    modern: dict[str, tuple[pd.Series, str]] = {}
     errors: list[str] = []
     for key, spec in assets.items():
         name = provider_name or spec.provider
@@ -88,16 +94,38 @@ def export_prices(
             errors.append(f"{spec.label} ({spec.symbol}): no data before {end}.")
             continue
         payload_assets[key] = _entry(spec, name, series)
+        modern[key] = (series, name)
 
     if errors:
         raise DataError("Export aborted, data unavailable for:\n  - " + "\n  - ".join(errors))
 
     payload_inflation: dict[str, dict] = {}
     warnings: list[str] = []
+
+    # older history chained before each recent series (optional, per asset)
+    if long_history and provider_name in (None, "yahoo", "synthetic"):
+        builder = LongHistoryBuilder(source("synthetic" if provider_name == "synthetic" else "yahoo"))
+        for key, (series, name) in modern.items():
+            spec = assets[key]
+            if not LongHistoryBuilder.supports(key) or spec.symbol != DEFAULT_ASSETS.get(key, spec).symbol:
+                continue
+            last: Exception | None = None
+            for attempt in range(1, retries + 1):
+                try:
+                    _, history = builder.extend(key, series, spec.symbol, PROVIDER_NAMES.get(name, name))
+                    payload_assets[key]["history"] = history
+                    last = None
+                    break
+                except DataError as exc:
+                    last = exc
+                    if attempt < retries:
+                        time.sleep(pause * attempt)
+            if last is not None:
+                warnings.append(f"Long history skipped for {spec.label}: {last}")
     for key, spec in inflation.items():
         name = provider_name or spec.provider
         try:
-            series = _fetch_with_retry(source(name), spec, start_ts, end_ts, retries, pause)
+            series = _fetch_with_retry(source(name), spec, pd.Timestamp(INFLATION_START), end_ts, retries, pause)
         except DataError as exc:
             warnings.append(f"Inflation series skipped: {exc}")
             continue

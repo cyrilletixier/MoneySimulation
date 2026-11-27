@@ -95,6 +95,7 @@ class SimulationConfig:
     rebalance: bool = True  # bring weights back to target at each step
     monthly_contribution: float = 0.0  # added every month, split according to the target allocation
     inflation: str | None = None  # key of INFLATION_SERIES ("eu", "us") to compare with, or None
+    long_history: bool = False  # extend ETF histories backwards with older/reconstructed data
     assets: dict[str, AssetSpec] = field(default_factory=lambda: dict(DEFAULT_ASSETS))
     inflation_series: dict[str, AssetSpec] = field(default_factory=lambda: dict(INFLATION_SERIES))
 

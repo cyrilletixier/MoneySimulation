@@ -30,17 +30,32 @@ _FIRST_DAY = "1990-01-01"
 _LAST_DAY = "2035-12-31"
 
 
+# Real inception dates of the default proxies, so the demo data has the same limits as real data.
+INCEPTION = {
+    "SPY": "1993-01-29", "EXSA.DE": "2000-03-01", "GC=F": "2000-08-30", "IEF": "2002-07-26",
+    "LQD": "2002-07-26", "VNQ": "2004-09-23", "BTC-USD": "2014-09-17",
+}
+# first day of the synthetic "@long" prefixes (older history used by the long-history demo)
+LONG_START = {"GC=F": "1960-01-01", "VNQ": "1996-05-13"}
+_LONG_DEFAULT_START = "1928-01-02"
+_CPI_FIRST_DAY = "1940-01-01"
+
+
 class SyntheticProvider:
     name = "synthetic"
 
     def get_prices(self, symbol: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
         rng = np.random.default_rng(zlib.crc32(symbol.encode()))
         if symbol in MONTHLY_INDEX_SYMBOLS:
-            months = pd.date_range(_FIRST_DAY, _LAST_DAY, freq="MS")
+            months = pd.date_range(_CPI_FIRST_DAY, _LAST_DAY, freq="MS")
             growth = 0.02 / 12 + 0.002 * rng.standard_normal(len(months))
             return clean_series(pd.Series(100 * np.exp(np.cumsum(growth)), index=months), symbol)
-        mu, sigma = PARAMS.get(symbol, _DEFAULT)
-        days = pd.bdate_range(_FIRST_DAY, _LAST_DAY)
+        base, first_day = symbol, INCEPTION.get(symbol, _FIRST_DAY)
+        if symbol.endswith("@long"):
+            base = symbol[: -len("@long")]
+            first_day = LONG_START.get(base, _LONG_DEFAULT_START)
+        mu, sigma = PARAMS.get(base, _DEFAULT)
+        days = pd.bdate_range(first_day, _LAST_DAY)
         dt = 1 / 252
         shocks = rng.standard_normal(len(days))
         log_ret = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * shocks

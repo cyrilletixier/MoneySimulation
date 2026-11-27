@@ -112,6 +112,20 @@ Providers disponibles :
 
 Les téléchargements sont mis en cache dans `.cache/` pour éviter de refaire des appels à chaque exécution. Pour brancher une nouvelle source, il suffit d'écrire une classe avec une méthode `get_prices(symbol, start, end)` qui renvoie une `pandas.Series` (voir `src/portfolio_sim/providers/`).
 
+## Historique long (reconstitué)
+
+Avec `long_history: true` (YAML), `--long-history` (CLI) ou le choix « Historique long » sur le site, les séries sont prolongées avant la création des fonds, puis raccordées à la série du fonds (mise à l'échelle à sa première date) :
+
+| Classe | Avant le fonds | Source | Depuis |
+|---|---|---|---|
+| Actions US | indice S&P 500 `^GSPC` + dividendes mensuels réinvestis (Shiller) | reconstitué | 1928 |
+| Or | cours mensuel de la Banque mondiale | marché | 1960 |
+| Dette d'État | obligation fictive à 10 ans, valorisée avec les taux 10 ans de Shiller | reconstitué | 1928 |
+| Immobilier | REIT `VGSIX` | marché | 1996 |
+| Inflation | CPI américain | marché | 1947 |
+
+Actions EU, obligations d'entreprises et Bitcoin n'ont pas d'historique plus ancien : une allocation qui en contient reste limitée par leur date de début (le site indique quel actif limite). Contrôle de cohérence sur les données Shiller : S&P 500 dividendes réinvestis ≈ 9,9 %/an sur 1928-2023 (≈ 10 % publié) ; Treasuries 10 ans ≈ 4,8 %/an. Chaque série est étiquetée « marché » ou « reconstitué » dans le site (« Sources par période »). Les téléchargements de `^GSPC`/`VGSIX` n'ont pas pu être testés depuis l'environnement de développement : en cas d'échec dans l'Action, le site retombe sur l'historique court (avertissement dans les logs).
+
 ## Limites connues (à garder en tête)
 
 - **Bitcoin** : très volatil, et seulement disponible depuis septembre 2014 (le site refuse une date de départ antérieure quand il est dans l'allocation).

@@ -219,3 +219,11 @@ td.total { font-weight: 650; }
   .kpi.main { grid-column: 1 / -1; }
   .row2 { grid-template-columns: 1fr; }
 }
+
+.sources{margin:.25rem 0 .75rem;font-size:.85rem}
+.sources summary{cursor:pointer;color:var(--muted,#667)}
+.sources ul{margin:.25rem 0 .5rem;padding-left:1rem;list-style:none}
+.sources .tag{display:inline-block;padding:0 .4rem;border-radius:.6rem;font-size:.72rem;background:#e8eef7;color:#234}
+.sources .tag.reconstructed{background:#fdeccb;color:#6a4200}
+.sources .tag.synthetic{background:#eee;color:#555}
+.sources .muted{color:#778}

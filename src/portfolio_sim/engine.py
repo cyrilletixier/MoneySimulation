@@ -24,7 +24,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from .models import SimulationConfig
+from .longhistory import LongHistoryBuilder
+from .models import DEFAULT_ASSETS, SimulationConfig
 from .providers import DataError, PriceProvider, build_provider
 
 # A price series may end a few days before the requested date (weekends, holidays).
@@ -157,9 +158,15 @@ def simulate(
         return cache.setdefault((provider_name, ""), build_provider(provider_name, cache_dir=cache_dir, csv_dir=csv_dir))
 
     prices: dict[str, list[float]] = {}
+    builder: LongHistoryBuilder | None = None
     for key in config.allocation:
         spec = config.assets[key]
         series = source_for(spec.provider).get_prices(spec.symbol, dates[0], dates[-1])
+        if (config.long_history and LongHistoryBuilder.supports(key)
+                and spec.symbol == DEFAULT_ASSETS[key].symbol):
+            if builder is None:
+                builder = LongHistoryBuilder(provider if provider is not None else source_for("yahoo"))
+            series, _ = builder.extend(key, series, spec.symbol, spec.provider)
         label = f"{spec.label} ({spec.symbol})"
         prices[key] = [price_at(series, d, label) for d in dates]
 

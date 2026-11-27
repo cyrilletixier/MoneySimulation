@@ -132,6 +132,8 @@ def _build_config(args: argparse.Namespace) -> SimulationConfig:
         cfg.monthly_contribution = args.monthly
     if args.inflation:
         cfg.inflation = args.inflation
+    if args.long_history:
+        cfg.long_history = True
     # re-run validation after overrides
     cfg.__post_init__()
     return cfg
@@ -178,6 +180,12 @@ def cmd_export(args: argparse.Namespace) -> int:
         return 1
     for key, a in payload["assets"].items():
         print(f"{key:<13}{a['symbol']:<10}{a['start']} -> {a['end']}  ({len(a['dates'])} points)")
+    for key, a in payload["assets"].items():
+        if "history" in a:
+            seg = a["history"]["segments"][0]
+            print(f"  historique long {key:<13}{seg['from']} -> {seg['to']}  [{seg['kind']}]")
+    for w in payload.get("warnings", []):
+        print(f"Avertissement : {w}", file=sys.stderr)
     print(f"Données écrites dans {args.out}" + ("  [SYNTHÉTIQUES]" if payload["synthetic"] else ""))
     return 0
 
@@ -196,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Ex : us_equity=30 eu_equity=30 gold=10 gov_debt=10 bonds=10 real_estate=10")
     r.add_argument("--no-rebalance", action="store_true", help="Pas de rééquilibrage (buy & hold)")
     r.add_argument("--monthly", type=float, help="Versement mensuel, investi selon l'allocation cible")
+    r.add_argument("--long-history", action="store_true",
+                   help="Historique long : prolonge les séries (S&P 500 dès 1928, or dès 1960, dette d'État reconstituée, REIT dès 1996)")
     r.add_argument("--inflation", choices=["eu", "us"],
                    help="Comparer à l'inflation : eu = zone euro (IPCH), us = États-Unis (CPI)")
     r.add_argument("--provider", choices=["yahoo", "fred", "csv", "synthetic"],

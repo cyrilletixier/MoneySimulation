@@ -53,17 +53,25 @@
     return out;
   }
 
-  /** Transforme une section du JSON exporté (assets ou inflation) en séries prêtes à interroger. */
-  function prepareSeries(entries) {
+  /**
+   * Transforme une section du JSON exporté (assets ou inflation) en séries prêtes à interroger.
+   * Avec { long: true }, les actifs qui ont un `history` sont prolongés vers le passé : l'historique
+   * (déjà mis à l'échelle côté Python pour coller à la série récente) est placé avant la série.
+   */
+  function prepareSeries(entries, opts = {}) {
     const out = {};
     for (const [key, a] of Object.entries(entries || {})) {
-      out[key] = {
-        key,
-        label: a.label,
-        symbol: a.symbol,
-        dates: a.dates.map(parseISO),
-        prices: a.prices,
-      };
+      let dates = a.dates.map(parseISO);
+      let prices = a.prices;
+      let segments = null;
+      if (opts.long && a.history) {
+        const join = parseISO(a.history.join);
+        const k = dates.findIndex((d) => d >= join);
+        dates = a.history.dates.map(parseISO).concat(dates.slice(k));
+        prices = a.history.prices.concat(prices.slice(k));
+        segments = a.history.segments;
+      }
+      out[key] = { key, label: a.label, symbol: a.symbol, dates, prices, segments };
     }
     return out;
   }
