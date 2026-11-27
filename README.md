@@ -1,13 +1,40 @@
-# portfolio-simulator
+# MoneySimulation
 
 Simulateur d'évolution d'un portefeuille multi-classes d'actifs, calculé sur des **données de marché réelles**.
 
 Vous donnez : une somme de départ, une date de départ et une stratégie (répartition en %). Le simulateur récupère l'historique de prix, rejoue la stratégie pas à pas (1 an par défaut) et affiche la valeur du portefeuille, par actif et au total, avec quelques indicateurs (rendement annualisé, volatilité, perte maximale).
 
+## Site web
+
+Le dossier `docs/` contient un site statique : on choisit la **stratégie** (curseurs ou préréglages), la **somme de départ**, la **date de départ** (et de fin), le **pas** (annuel, semestriel, trimestriel, mensuel) et le rééquilibrage ; le résultat se recalcule en direct (indicateurs, graphique, tableau, export CSV, lien partageable).
+
+Le calcul tourne dans le navigateur (`docs/engine.js`, même logique que le moteur Python, vérifiée par des tests de parité). Les prix viennent d'un fichier `docs/data/prices.json` généré par `portfolio-sim export-data` à partir de Yahoo Finance.
+
+### Publier sur GitHub Pages (une fois)
+
+1. Sur GitHub : **Settings → Pages → Build and deployment → Source : GitHub Actions**.
+2. Le workflow `.github/workflows/pages.yml` télécharge les prix réels, puis déploie le site. Il tourne à chaque push sur `main`, chaque lundi (données à jour) et à la demande (onglet *Actions → Déployer le site → Run workflow*).
+3. Le site est alors disponible sur `https://cyrilletixier.github.io/MoneySimulation/`.
+
+Si le téléchargement échoue dans le workflow (Yahoo bloque parfois les serveurs GitHub), rien n'est publié. Solution de secours : générer le fichier chez soi et le committer.
+
+```bash
+portfolio-sim export-data           # écrit docs/data/prices.json avec les vrais prix
+git add docs/data/prices.json && git commit -m "Mise à jour des prix" && git push
+```
+
+> Le `prices.json` versionné au départ contient des données **synthétiques** (aléatoires), signalées par un bandeau sur le site. Elles sont remplacées par les vraies à la première exécution du workflow (ou de la commande ci-dessus).
+
+### Essayer en local
+
+```bash
+python -m http.server --directory docs     # puis ouvrir http://localhost:8000
+```
+
 ## Installation
 
 ```bash
-git clone <url-du-depot> && cd portfolio-simulator
+git clone https://github.com/cyrilletixier/MoneySimulation && cd MoneySimulation
 python -m venv .venv && source .venv/bin/activate    # Windows : .venv\Scripts\activate
 pip install -e ".[plot]"                              # ".[dev]" pour lancer les tests
 ```
@@ -86,7 +113,8 @@ Les téléchargements sont mis en cache dans `.cache/` pour éviter de refaire d
 ## Tests
 
 ```bash
-pip install -e ".[dev]" && pytest
+pip install -e ".[dev]" && pytest        # Python + parité Python/JS (nécessite node)
+node --test tests/js/engine.test.mjs        # moteur JavaScript
 ```
 
 Les connecteurs Yahoo et FRED sont testés sur des réponses simulées (pas d'appel réseau dans les tests).

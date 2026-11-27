@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulateur de portefeuille</title>
+  <meta name="description" content="Choisissez une stratégie d'allocation, une somme et une date de départ : le simulateur rejoue l'évolution du portefeuille sur des données de marché réelles.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230f6b66%27/%3E%3Cpath d=%27M5 24l7-8 5 4 10-12%27 fill=%27none%27 stroke=%27white%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Simulateur de portefeuille</h1>
+      <p class="lede">Choisissez une stratégie, une somme et une date de départ&nbsp;: le portefeuille est rejoué pas à pas sur des données de marché passées.</p>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <main class="wrap layout">
+    <form id="form" class="panel controls" autocomplete="off" novalidate>
+      <h2>Paramètres</h2>
+
+      <div class="field">
+        <label for="amount">Somme de départ</label>
+        <input id="amount" type="number" inputmode="decimal" min="1" step="100" value="100000">
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="start">Date de départ</label>
+          <input id="start" type="date">
+        </div>
+        <div class="field">
+          <label for="end">Date de fin <span class="opt">(optionnel)</span></label>
+          <input id="end" type="date">
+        </div>
+      </div>
+      <p id="range-hint" class="hint"></p>
+
+      <div class="row2">
+        <div class="field">
+          <label for="step">Pas de calcul</label>
+          <select id="step">
+            <option value="12" selected>Annuel</option>
+            <option value="6">Semestriel</option>
+            <option value="3">Trimestriel</option>
+            <option value="1">Mensuel</option>
+          </select>
+        </div>
+        <div class="field check">
+          <label class="checkbox"><input id="rebalance" type="checkbox" checked> Rééquilibrer à chaque pas</label>
+        </div>
+      </div>
+
+      <h2 class="alloc-title">Stratégie</h2>
+      <div id="presets" class="presets" role="group" aria-label="Stratégies prédéfinies"></div>
+      <div id="alloc" class="alloc"></div>
+      <div class="alloc-total">
+        <span>Total</span>
+        <strong id="alloc-sum">100&nbsp;%</strong>
+        <button type="button" id="normalize" class="link" hidden>Ramener à 100&nbsp;%</button>
+      </div>
+    </form>
+
+    <section class="results" aria-live="polite">
+      <div id="status" class="status" hidden></div>
+      <div id="output" hidden>
+        <div id="kpis" class="kpis"></div>
+
+        <div class="panel chart-panel">
+          <div class="panel-head">
+            <h2>Évolution du portefeuille</h2>
+            <div id="legend" class="legend"></div>
+          </div>
+          <div id="chart" class="chart"></div>
+        </div>
+
+        <div class="panel table-panel">
+          <div class="panel-head">
+            <h2>Détail par date</h2>
+            <div class="actions">
+              <button type="button" id="copy-link" class="btn">Copier le lien</button>
+              <button type="button" id="export-csv" class="btn">Exporter en CSV</button>
+            </div>
+          </div>
+          <div class="table-scroll"><table id="table"></table></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p id="data-note"></p>
+    <p>Limites&nbsp;: chaque classe d'actifs est représentée par un fonds ou un indice coté (proxy) ; les montants ne sont pas convertis entre devises (la plupart des proxies sont en USD, l'Europe en EUR) ; ni frais, ni fiscalité, ni inflation. Le passé ne préjuge pas de l'avenir&nbsp;: simulation à but informatif, pas un conseil en investissement.</p>
+  </footer>
+
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

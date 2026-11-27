@@ -136,6 +136,22 @@ def cmd_assets(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    from .export import export_prices
+
+    try:
+        payload = export_prices(args.out, provider_name=args.provider, start=args.start,
+                                cache_dir=None if args.no_cache else args.cache_dir,
+                                csv_dir=args.csv_dir, retries=args.retries)
+    except (DataError, ValueError) as exc:
+        print(f"Erreur : {exc}", file=sys.stderr)
+        return 1
+    for key, a in payload["assets"].items():
+        print(f"{key:<13}{a['symbol']:<10}{a['start']} -> {a['end']}  ({len(a['dates'])} points)")
+    print(f"Données écrites dans {args.out}" + ("  [SYNTHÉTIQUES]" if payload["synthetic"] else ""))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="portfolio-sim", description="Simulateur de portefeuille multi-actifs.")
     sub = p.add_subparsers(dest="command", required=True)
@@ -160,6 +176,17 @@ def main(argv: list[str] | None = None) -> int:
 
     a = sub.add_parser("assets", help="Afficher les sources de données par défaut")
     a.set_defaults(func=cmd_assets)
+
+    e = sub.add_parser("export-data", help="Télécharger les prix et écrire docs/data/prices.json (pour le site web)")
+    e.add_argument("--out", default="docs/data/prices.json", help="Fichier JSON de sortie")
+    e.add_argument("--start", default="1990-01-01", help="Début de l'historique à télécharger")
+    e.add_argument("--provider", choices=["yahoo", "fred", "csv", "synthetic"],
+                   help="Force une source pour tous les actifs (synthetic = données aléatoires, démo)")
+    e.add_argument("--csv-dir", default="data", help="Dossier des CSV (source csv)")
+    e.add_argument("--cache-dir", default=".cache", help="Dossier de cache")
+    e.add_argument("--no-cache", action="store_true", help="Désactive le cache (données toujours fraîches)")
+    e.add_argument("--retries", type=int, default=3, help="Tentatives par actif en cas d'échec réseau")
+    e.set_defaults(func=cmd_export)
 
     args = p.parse_args(argv)
     return args.func(args)

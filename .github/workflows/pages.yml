@@ -1,0 +1,48 @@
+name: Déployer le site
+
+# Le site (dossier docs/) est statique : le calcul se fait dans le navigateur.
+# Ce workflow télécharge les prix réels (Yahoo Finance) puis publie le site sur GitHub Pages.
+# Il tourne à chaque push sur main, chaque lundi (données à jour) et à la demande.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer le simulateur
+        run: pip install -e .
+      - name: Télécharger les prix réels
+        # échoue (et ne publie rien) si un actif est indisponible : jamais de données partielles
+        run: portfolio-sim export-data --out docs/data/prices.json --no-cache
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
